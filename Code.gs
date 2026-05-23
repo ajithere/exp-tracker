@@ -14,7 +14,7 @@
 const EXPENSES_TAB  = 'Expenses';
 const SETTINGS_TAB  = 'Settings';
 const BUDGET_TAB    = 'Sheet1';    // existing tab with Fixed/Variable budget rows
-const SECRET        = '6Sn87cG-kmB_a3KDY9loD1y6cC8TOVVP';
+const SECRET        = PropertiesService.getScriptProperties().getProperty('TRACKER_SECRET');
 
 // ─── HTTP entry points ───────────────────────────────────────────────────────
 
