@@ -11,6 +11,7 @@
 (function () {
   // ── Config ─────────────────────────────────────────────────────────────────
   const API_URL  = (typeof window !== 'undefined' && window.TRACKER_API_URL) || '';
+  const SECRET   = (typeof window !== 'undefined' && window.TRACKER_SECRET)  || '';
   const POLL_MS  = 30_000;   // refresh from Sheets every 30 s
   const LS_KEY   = 'swiss-tracker-cache.v2';
 
@@ -84,7 +85,7 @@
 
   async function _apiFetch() {
     // Cache-bust so Google's CDN doesn't serve stale data
-    const url = API_URL + (API_URL.includes('?') ? '&' : '?') + '_t=' + Date.now();
+    const url = API_URL + (API_URL.includes('?') ? '&' : '?') + '_t=' + Date.now() + '&secret=' + encodeURIComponent(SECRET);
     const res  = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
@@ -97,7 +98,7 @@
     const res = await fetch(API_URL, {
       method:  'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body:    JSON.stringify(body),
+      body:    JSON.stringify({ ...body, secret: SECRET }),
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();

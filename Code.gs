@@ -14,10 +14,12 @@
 const EXPENSES_TAB  = 'Expenses';
 const SETTINGS_TAB  = 'Settings';
 const BUDGET_TAB    = 'Sheet1';    // existing tab with Fixed/Variable budget rows
+const SECRET        = '6Sn87cG-kmB_a3KDY9loD1y6cC8TOVVP';
 
 // ─── HTTP entry points ───────────────────────────────────────────────────────
 
 function doGet(e) {
+  if ((e.parameter.secret || '') !== SECRET) return jsonOut({ error: 'Unauthorized' });
   try {
     return jsonOut(getState_());
   } catch (err) {
@@ -28,6 +30,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
+    if ((body.secret || '') !== SECRET) return jsonOut({ error: 'Unauthorized' });
     let result;
     switch (body.action) {
       case 'addEntry':    result = addEntry_(body.entry);           break;
@@ -129,6 +132,13 @@ function ensureTab_(name, headers) {
   return sheet;
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function sanitize_(v) {
+  const s = String(v || '').trim();
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
+}
+
 // ─── Mutations ───────────────────────────────────────────────────────────────
 
 function addEntry_(entry) {
@@ -143,12 +153,12 @@ function addEntry_(entry) {
   sheet.appendRow([
     id,
     new Date().toISOString(),
-    entry.category,
-    entry.person,
+    sanitize_(entry.category),
+    sanitize_(entry.person),
     amount,
-    entry.currency,
+    entry.currency === 'CHF' ? 'CHF' : 'INR',
     amountINR,
-    entry.note || '',
+    sanitize_(entry.note),
   ]);
   return { ok: true, id };
 }
@@ -172,12 +182,12 @@ function updateEntry_(id, patch) {
   sheet.getRange(idx + 2, 1, 1, 8).setValues([[
     row[0],
     row[1],
-    patch.category != null ? patch.category : row[2],
-    patch.person   != null ? patch.person   : row[3],
+    sanitize_(patch.category != null ? patch.category : row[2]),
+    sanitize_(patch.person   != null ? patch.person   : row[3]),
     amount,
     currency,
     amountINR,
-    patch.note     != null ? patch.note     : row[7],
+    sanitize_(patch.note     != null ? patch.note     : row[7]),
   ]]);
   return { ok: true };
 }
