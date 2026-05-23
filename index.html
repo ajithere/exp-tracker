@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Switzerland Trip Tracker</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0c1014" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Tracker" />
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: #0c1014;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    /* Safe area insets for notch / home indicator on iOS */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  #root {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Settings gear button — bottom-right corner, above tab bar */
+  #settings-btn {
+    position: fixed;
+    right: 18px;
+    bottom: 90px;
+    z-index: 1000;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 0.5px solid rgba(255,255,255,0.14);
+    background: rgba(20,26,33,0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: rgba(236,235,230,0.55);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+  #settings-btn:hover { color: rgba(236,235,230,0.9); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<button id="settings-btn" aria-label="Settings" title="Settings (CHF rate, thresholds)">⚙</button>
+
+<!-- ─────────────────────────────────────────────────────────────────────────
+     GOOGLE SHEETS BACKEND
+     After deploying Code.gs as a Web App (see Code.gs for instructions),
+     paste your deployment URL below.  Leave it empty to use local-only mode.
+     ───────────────────────────────────────────────────────────────────────── -->
+<script>
+  window.TRACKER_API_URL = 'https://script.google.com/macros/s/AKfycbyCH4S_fxY3dOS6RrXT7lvwoYQOAmeXL_k5YWu18W04QnlA0bKx8R9cMQkXOIdKaq5GnA/exec';  // ← paste your Apps Script URL here
+</script>
+
+<!-- React + Babel (CDN) -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="store.js"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="compass-app.jsx"></script>
+
+<script type="text/babel">
+  // Initialise sliders from the cached store state (populated from the sheet on first sync).
+  // This avoids overwriting the sheet's saved rate on every page load.
+  const _cached = window.ExpenseStore.load().settings;
+  const TWEAK_DEFAULTS = {
+    chfRate: _cached.chfRate,
+    warningThreshold: _cached.warningThreshold,
+  };
+
+  function App() {
+    const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+    const _firstRender = React.useRef(true);
+
+    // Only push to the store (and sheet) when the user actually moves a slider.
+    React.useEffect(() => {
+      if (_firstRender.current) { _firstRender.current = false; return; }
+      window.ExpenseStore.setSettings({
+        chfRate: t.chfRate,
+        warningThreshold: t.warningThreshold,
+      });
+    }, [t.chfRate, t.warningThreshold]);
+
+    // Wire the gear button
+    React.useEffect(() => {
+      const btn = document.getElementById('settings-btn');
+      if (!btn) return;
+      const handler = () => { if (window.__toggleSettings) window.__toggleSettings(); };
+      btn.addEventListener('click', handler);
+      return () => btn.removeEventListener('click', handler);
+    }, []);
+
+    function reset() {
+      if (confirm('Reset all entries and settings to defaults?')) {
+        window.ExpenseStore.reset();
+        setTweak({ chfRate: 123, warningThreshold: 80 });
+      }
+    }
+
+    return (
+      <React.Fragment>
+        <CompassApp />
+        <TweaksPanel title="Settings">
+          <TweakSection label="Currency" />
+          <TweakSlider
+            label="CHF → ₹ rate" value={t.chfRate}
+            min={80} max={150} step={0.5} unit=" ₹"
+            onChange={(v) => setTweak('chfRate', v)}
+          />
+          <TweakSection label="Budget alerts" />
+          <TweakSlider
+            label="Warn at" value={t.warningThreshold}
+            min={50} max={95} step={5} unit="%"
+            onChange={(v) => setTweak('warningThreshold', v)}
+          />
+          <TweakSection label="Data" />
+          <TweakButton label="Reset all entries" onClick={reset} />
+        </TweaksPanel>
+      </React.Fragment>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+<script>
+  // Register service worker for offline support
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => {
+        // SW registration is best-effort; app works without it
+      });
+    });
+  }
+</script>
+</body>
+</html>
