@@ -286,12 +286,15 @@ function TweakButton({ label, onClick, secondary = false }) {
 }
 
 function TweakText({ label, value, onChange, placeholder = '' }) {
+  const [local, setLocal] = React.useState(value);
+  React.useEffect(() => { setLocal(value); }, [value]);
   return (
     <TweakRow label={label} inline>
       <input
         type="text" className="twk-field"
-        value={value} placeholder={placeholder}
-        onChange={e => onChange(e.target.value)}
+        value={local} placeholder={placeholder}
+        onChange={e => setLocal(e.target.value)}
+        onBlur={e => onChange(e.target.value)}
         style={{ width: 120, height: 26, fontSize: 11.5 }}
       />
     </TweakRow>
