@@ -234,30 +234,47 @@ function CompassDashboard({ state, summary, onJump }) {
 function CompassAdd({ state, onDone, editing, onCancelEdit }) {
   const VARIABLE_BUDGETS = state.variableBudgets || window.ExpenseStore.VARIABLE_BUDGETS;
   const { PEOPLE } = window.ExpenseStore;
+  const friendName = state.settings.friendName || 'Friend';
+  const paidByOptions = [...PEOPLE, friendName];
+
+  const initPerson = editing
+    ? (editing.paidBy === 'friend' ? friendName : editing.person)
+    : PEOPLE[0];
+
   const [amount, setAmount] = React.useState(editing ? String(editing.amount) : '');
   const [currency, setCurrency] = React.useState(editing ? editing.currency : 'CHF');
   const [category, setCategory] = React.useState(editing ? editing.category : (VARIABLE_BUDGETS[0]?.category ?? ''));
-  const [person, setPerson] = React.useState(editing ? editing.person : PEOPLE[0]);
+  const [person, setPerson] = React.useState(initPerson);
   const [note, setNote] = React.useState(editing ? editing.note : '');
-  const [sharedWithFriend, setSharedWithFriend] = React.useState(editing ? !!editing.sharedWithFriend : false);
-  const [paidBy, setPaidBy] = React.useState(editing?.paidBy || 'us');
+  const [sharedWithFriend, setSharedWithFriend] = React.useState(
+    editing ? !!editing.sharedWithFriend : initPerson === friendName
+  );
   const [splitRatio, setSplitRatio] = React.useState(editing?.splitRatio || '50-50');
 
   const n = parseFloat(amount) || 0;
   const inr = currency === 'CHF' ? Math.round(n * state.settings.chfRate) : Math.round(n);
   const canSave = n > 0;
 
-  const friendName = state.settings.friendName || 'Friend';
+  const isFriendPaying = person === friendName;
+  const paidBy = isFriendPaying ? 'friend' : 'us';
   const familyRatio = splitRatio === '75-25' ? 0.75 : splitRatio === '0-100' ? 0 : 0.5;
   const friendShare = Math.round(inr * (1 - familyRatio));
   const familyShare = Math.round(inr * familyRatio);
+  const familyShareCHF = +(n * familyRatio).toFixed(2);
+  const friendShareCHF = +(n * (1 - familyRatio)).toFixed(2);
+
+  function handlePersonChange(p) {
+    setPerson(p);
+    if (p === friendName) setSharedWithFriend(true);
+  }
 
   function save() {
     if (!canSave) return;
+    const entry = { amount: n, currency, category, person, note, sharedWithFriend, paidBy, splitRatio };
     if (editing) {
-      window.ExpenseStore.updateEntry(editing.id, { amount: n, currency, category, person, note, sharedWithFriend, paidBy, splitRatio });
+      window.ExpenseStore.updateEntry(editing.id, entry);
     } else {
-      window.ExpenseStore.addEntry({ amount: n, currency, category, person, note, sharedWithFriend, paidBy, splitRatio });
+      window.ExpenseStore.addEntry(entry);
     }
     onDone();
   }
@@ -344,20 +361,23 @@ function CompassAdd({ state, onDone, editing, onCancelEdit }) {
       {/* Person */}
       <div style={{ marginTop: 18 }}>
         <div style={{ fontSize: 10, color: C_TEXT_3, letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8 }}>Paid by</div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {PEOPLE.map(p => {
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {paidByOptions.map(p => {
             const active = person === p;
+            const isFriend = p === friendName;
+            const activeColor = isFriend ? '#c8a8e9' : C_ACCENT;
+            const activeBg = isFriend ? 'rgba(200,168,233,0.12)' : 'rgba(156,198,255,0.12)';
             return (
-              <button key={p} onClick={() => setPerson(p)} style={{
-                flex: 1, padding: '12px 0', border: `0.5px solid ${active ? C_ACCENT : C_LINE_2}`,
-                background: active ? 'rgba(156,198,255,0.12)' : C_BG_2,
-                color: active ? C_ACCENT : C_TEXT, borderRadius: 12,
+              <button key={p} onClick={() => handlePersonChange(p)} style={{
+                padding: '10px 0', border: `0.5px solid ${active ? activeColor : C_LINE_2}`,
+                background: active ? activeBg : C_BG_2,
+                color: active ? activeColor : C_TEXT, borderRadius: 12,
                 fontFamily: C_FONT_UI, fontSize: 13, fontWeight: 600, cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
               }}>
                 <div style={{
                   width: 26, height: 26, borderRadius: 999,
-                  background: active ? C_ACCENT : C_BG_3,
+                  background: active ? activeColor : C_BG_3,
                   color: active ? C_BG : C_TEXT_2,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 12, fontWeight: 700,
@@ -384,75 +404,96 @@ function CompassAdd({ state, onDone, editing, onCancelEdit }) {
         />
       </div>
 
-      {/* Split with friend */}
-      <div style={{ marginTop: 18, padding: '14px', background: C_BG_2, borderRadius: 14, border: `0.5px solid ${sharedWithFriend ? C_ACCENT + '55' : C_LINE}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 13, fontWeight: 500, color: sharedWithFriend ? C_ACCENT : C_TEXT }}>
-            Split with {friendName}
-          </span>
-          <button type="button" onClick={() => setSharedWithFriend(v => !v)} style={{
-            width: 36, height: 20, borderRadius: 999, border: 0, cursor: 'pointer',
-            background: sharedWithFriend ? C_ACCENT : C_BG_3, position: 'relative',
-            flexShrink: 0, transition: 'background .15s',
-          }}>
-            <span style={{
-              position: 'absolute', top: 3, left: sharedWithFriend ? 18 : 3,
-              width: 14, height: 14, borderRadius: 999, background: '#fff',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.3)', transition: 'left .15s',
-            }} />
-          </button>
-        </div>
-
-        {sharedWithFriend && (
-          <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* Split ratio */}
-            <div>
-              <div style={{ fontSize: 10, color: C_TEXT_3, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 6 }}>Split (family : {friendName})</div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {['50-50', '75-25', '0-100'].map(r => (
-                  <button key={r} onClick={() => {
-                    setSplitRatio(r);
-                    if (r === '0-100') setPaidBy('friend');
-                  }} style={{
-                    flex: 1, padding: '8px 0', border: `0.5px solid ${splitRatio === r ? C_ACCENT : C_LINE_2}`,
-                    background: splitRatio === r ? 'rgba(156,198,255,0.12)' : 'transparent',
-                    color: splitRatio === r ? C_ACCENT : C_TEXT_3,
-                    fontFamily: C_FONT_NUM, fontSize: 11, fontWeight: 600,
-                    borderRadius: 8, cursor: 'pointer',
-                  }}>{r}</button>
-                ))}
-              </div>
+      {/* Split section */}
+      {isFriendPaying ? (
+        <div style={{ marginTop: 18, padding: '14px', background: C_BG_2, borderRadius: 14, border: `0.5px solid #c8a8e955` }}>
+          <div style={{ fontSize: 10, color: C_TEXT_3, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 10 }}>
+            {friendName} paid · how much do we owe?
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[['50-50','50-50'], ['75-25','75-25'], ['0-100','Full owe']].map(([r, lbl]) => (
+              <button key={r} onClick={() => setSplitRatio(r)} style={{
+                flex: 1, padding: '8px 0', border: `0.5px solid ${splitRatio === r ? '#c8a8e9' : C_LINE_2}`,
+                background: splitRatio === r ? 'rgba(200,168,233,0.12)' : 'transparent',
+                color: splitRatio === r ? '#c8a8e9' : C_TEXT_3,
+                fontFamily: C_FONT_NUM, fontSize: 11, fontWeight: 600,
+                borderRadius: 8, cursor: 'pointer',
+              }}>{lbl}</button>
+            ))}
+          </div>
+          {n > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', background: C_BG_3, borderRadius: 8, marginTop: 10 }}>
+              {currency === 'CHF' ? (
+                <>
+                  <span style={{ fontFamily: C_FONT_NUM, fontSize: 11, color: C_TEXT_2 }}>We owe CHF {familyShareCHF.toFixed(2)} <span style={{ color: C_TEXT_3 }}>(₹{cFmt(familyShare)})</span></span>
+                  <span style={{ fontFamily: C_FONT_NUM, fontSize: 11, color: C_TEXT_3 }}>·</span>
+                  <span style={{ fontFamily: C_FONT_NUM, fontSize: 11, color: C_TEXT_2 }}>{friendName} CHF {friendShareCHF.toFixed(2)} <span style={{ color: C_TEXT_3 }}>(₹{cFmt(friendShare)})</span></span>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontFamily: C_FONT_NUM, fontSize: 12, color: C_TEXT_2 }}>We owe ₹{cFmt(familyShare)}</span>
+                  <span style={{ fontFamily: C_FONT_NUM, fontSize: 12, color: C_TEXT_3 }}>·</span>
+                  <span style={{ fontFamily: C_FONT_NUM, fontSize: 12, color: C_TEXT_2 }}>{friendName} ₹{cFmt(friendShare)}</span>
+                </>
+              )}
             </div>
-
-            {/* Who paid — hidden for 0-100 */}
-            {splitRatio !== '0-100' && (
+          )}
+        </div>
+      ) : (
+        <div style={{ marginTop: 18, padding: '14px', background: C_BG_2, borderRadius: 14, border: `0.5px solid ${sharedWithFriend ? C_ACCENT + '55' : C_LINE}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: sharedWithFriend ? C_ACCENT : C_TEXT }}>
+              Split with {friendName}
+            </span>
+            <button type="button" onClick={() => setSharedWithFriend(v => !v)} style={{
+              width: 36, height: 20, borderRadius: 999, border: 0, cursor: 'pointer',
+              background: sharedWithFriend ? C_ACCENT : C_BG_3, position: 'relative',
+              flexShrink: 0, transition: 'background .15s',
+            }}>
+              <span style={{
+                position: 'absolute', top: 3, left: sharedWithFriend ? 18 : 3,
+                width: 14, height: 14, borderRadius: 999, background: '#fff',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.3)', transition: 'left .15s',
+              }} />
+            </button>
+          </div>
+          {sharedWithFriend && (
+            <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div>
-                <div style={{ fontSize: 10, color: C_TEXT_3, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 6 }}>Who paid?</div>
+                <div style={{ fontSize: 10, color: C_TEXT_3, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 6 }}>Split (family : {friendName})</div>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  {[['us', 'Us'], ['friend', friendName]].map(([v, lbl]) => (
-                    <button key={v} onClick={() => setPaidBy(v)} style={{
-                      flex: 1, padding: '8px 0', border: `0.5px solid ${paidBy === v ? C_ACCENT : C_LINE_2}`,
-                      background: paidBy === v ? 'rgba(156,198,255,0.12)' : 'transparent',
-                      color: paidBy === v ? C_ACCENT : C_TEXT_3,
-                      fontFamily: C_FONT_UI, fontSize: 12, fontWeight: 600,
+                  {['50-50', '75-25'].map(r => (
+                    <button key={r} onClick={() => setSplitRatio(r)} style={{
+                      flex: 1, padding: '8px 0', border: `0.5px solid ${splitRatio === r ? C_ACCENT : C_LINE_2}`,
+                      background: splitRatio === r ? 'rgba(156,198,255,0.12)' : 'transparent',
+                      color: splitRatio === r ? C_ACCENT : C_TEXT_3,
+                      fontFamily: C_FONT_NUM, fontSize: 11, fontWeight: 600,
                       borderRadius: 8, cursor: 'pointer',
-                    }}>{lbl}</button>
+                    }}>{r}</button>
                   ))}
                 </div>
               </div>
-            )}
-
-            {/* Amount breakdown */}
-            {n > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', background: C_BG_3, borderRadius: 8 }}>
-                <span style={{ fontFamily: C_FONT_NUM, fontSize: 12, color: C_TEXT_2 }}>Family ₹{cFmt(familyShare)}</span>
-                <span style={{ fontFamily: C_FONT_NUM, fontSize: 12, color: C_TEXT_3 }}>·</span>
-                <span style={{ fontFamily: C_FONT_NUM, fontSize: 12, color: C_TEXT_2 }}>{friendName} ₹{cFmt(friendShare)}</span>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+              {n > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', background: C_BG_3, borderRadius: 8 }}>
+                  {currency === 'CHF' ? (
+                    <>
+                      <span style={{ fontFamily: C_FONT_NUM, fontSize: 11, color: C_TEXT_2 }}>Family CHF {familyShareCHF.toFixed(2)} <span style={{ color: C_TEXT_3 }}>(₹{cFmt(familyShare)})</span></span>
+                      <span style={{ fontFamily: C_FONT_NUM, fontSize: 11, color: C_TEXT_3 }}>·</span>
+                      <span style={{ fontFamily: C_FONT_NUM, fontSize: 11, color: C_TEXT_2 }}>{friendName} CHF {friendShareCHF.toFixed(2)} <span style={{ color: C_TEXT_3 }}>(₹{cFmt(friendShare)})</span></span>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontFamily: C_FONT_NUM, fontSize: 12, color: C_TEXT_2 }}>Family ₹{cFmt(familyShare)}</span>
+                      <span style={{ fontFamily: C_FONT_NUM, fontSize: 12, color: C_TEXT_3 }}>·</span>
+                      <span style={{ fontFamily: C_FONT_NUM, fontSize: 12, color: C_TEXT_2 }}>{friendName} ₹{cFmt(friendShare)}</span>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <button disabled={!canSave} onClick={save} style={{
         width: '100%', marginTop: 20, padding: '15px 0', border: 0, cursor: canSave ? 'pointer' : 'not-allowed',
@@ -491,7 +532,7 @@ function CompassHistory({ state, onEdit }) {
   }
 
   function personColor(p) {
-    return p === 'Asha' ? '#e89b7e' : p === 'Ajit' ? '#9cc6ff' : '#b6e1a3';
+    return p === 'Asha' ? '#e89b7e' : p === 'Ajit' ? '#9cc6ff' : p === 'Nishant' ? '#b6e1a3' : '#c8a8e9';
   }
 
   return (
