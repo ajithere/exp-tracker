@@ -55,11 +55,12 @@ function jsonOut(data) {
 
 function getSettings_() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SETTINGS_TAB);
-  const settings = { chfRate: 123, warningThreshold: 80 };
+  const settings = { chfRate: 123, warningThreshold: 80, friendName: 'Friend' };
   if (!sheet) return settings;
   sheet.getDataRange().getValues().forEach(r => {
     if (r[0] === 'chfRate')          settings.chfRate          = Number(r[1]);
     if (r[0] === 'warningThreshold') settings.warningThreshold = Number(r[1]);
+    if (r[0] === 'friendName')       settings.friendName       = String(r[1] || 'Friend');
   });
   return settings;
 }
@@ -94,18 +95,21 @@ function getState_() {
 
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXPENSES_TAB);
   if (sheet && sheet.getLastRow() > 1) {
-    const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 8).getValues();
+    const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 11).getValues();
     entries = rows
       .filter(r => r[0])   // row must have an ID
       .map(r => ({
-        id:        String(r[0]),
-        ts:        new Date(r[1]).getTime(),
-        category:  String(r[2]),
-        person:    String(r[3]),
-        amount:    Number(r[4]),
-        currency:  String(r[5]),
-        amountINR: Number(r[6]),
-        note:      String(r[7] || ''),
+        id:              String(r[0]),
+        ts:              new Date(r[1]).getTime(),
+        category:        String(r[2]),
+        person:          String(r[3]),
+        amount:          Number(r[4]),
+        currency:        String(r[5]),
+        amountINR:       Number(r[6]),
+        note:            String(r[7] || ''),
+        sharedWithFriend: r[8] === true || r[8] === 'TRUE',
+        paidBy:          String(r[9]  || 'us'),
+        splitRatio:      String(r[10] || '50-50'),
       }))
       .sort((a, b) => b.ts - a.ts);
   }
@@ -142,7 +146,7 @@ function sanitize_(v) {
 // ─── Mutations ───────────────────────────────────────────────────────────────
 
 function addEntry_(entry) {
-  const sheet = ensureTab_(EXPENSES_TAB, ['ID','Timestamp','Category','Person','Amount','Currency','Amount INR','Note']);
+  const sheet = ensureTab_(EXPENSES_TAB, ['ID','Timestamp','Category','Person','Amount','Currency','Amount INR','Note','Shared','Paid By','Split']);
   const settings = getSettings_();
   const id = 'e' + Date.now() + Math.random().toString(36).slice(2, 6);
   const amount = Number(entry.amount) || 0;
@@ -159,6 +163,9 @@ function addEntry_(entry) {
     entry.currency === 'CHF' ? 'CHF' : 'INR',
     amountINR,
     sanitize_(entry.note),
+    entry.sharedWithFriend || false,
+    entry.paidBy || 'us',
+    entry.splitRatio || '50-50',
   ]);
   return { ok: true, id };
 }
@@ -167,7 +174,7 @@ function updateEntry_(id, patch) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(EXPENSES_TAB);
   if (!sheet || sheet.getLastRow() <= 1) return { ok: false, error: 'Not found' };
 
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 8).getValues();
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 11).getValues();
   const idx  = rows.findIndex(r => String(r[0]) === String(id));
   if (idx < 0) return { ok: false, error: 'Not found' };
 
@@ -179,7 +186,7 @@ function updateEntry_(id, patch) {
     ? Math.round(amount * settings.chfRate)
     : Math.round(amount);
 
-  sheet.getRange(idx + 2, 1, 1, 8).setValues([[
+  sheet.getRange(idx + 2, 1, 1, 11).setValues([[
     row[0],
     row[1],
     sanitize_(patch.category != null ? patch.category : row[2]),
@@ -187,7 +194,10 @@ function updateEntry_(id, patch) {
     amount,
     currency,
     amountINR,
-    sanitize_(patch.note     != null ? patch.note     : row[7]),
+    sanitize_(patch.note            != null ? patch.note            : row[7]),
+    patch.sharedWithFriend          != null ? patch.sharedWithFriend : row[8],
+    patch.paidBy                    != null ? patch.paidBy           : (row[9] || 'us'),
+    patch.splitRatio                != null ? patch.splitRatio        : (row[10] || '50-50'),
   ]]);
   return { ok: true };
 }

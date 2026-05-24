@@ -285,7 +285,20 @@ function TweakButton({ label, onClick, secondary = false }) {
   );
 }
 
+function TweakText({ label, value, onChange, placeholder = '' }) {
+  return (
+    <TweakRow label={label} inline>
+      <input
+        type="text" className="twk-field"
+        value={value} placeholder={placeholder}
+        onChange={e => onChange(e.target.value)}
+        style={{ width: 120, height: 26, fontSize: 11.5 }}
+      />
+    </TweakRow>
+  );
+}
+
 Object.assign(window, {
   useTweaks, TweaksPanel, TweakSection, TweakRow,
-  TweakSlider, TweakToggle, TweakSelect, TweakButton,
+  TweakSlider, TweakToggle, TweakSelect, TweakButton, TweakText,
 });

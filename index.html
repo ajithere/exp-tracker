@@ -93,6 +93,7 @@
   const TWEAK_DEFAULTS = {
     chfRate: _cached.chfRate,
     warningThreshold: _cached.warningThreshold,
+    friendName: _cached.friendName || 'Friend',
   };
 
   function App() {
@@ -105,8 +106,9 @@
       window.ExpenseStore.setSettings({
         chfRate: t.chfRate,
         warningThreshold: t.warningThreshold,
+        friendName: t.friendName,
       });
-    }, [t.chfRate, t.warningThreshold]);
+    }, [t.chfRate, t.warningThreshold, t.friendName]);
 
     // Wire the gear button
     React.useEffect(() => {
@@ -139,6 +141,11 @@
             label="Warn at" value={t.warningThreshold}
             min={50} max={95} step={5} unit="%"
             onChange={(v) => setTweak('warningThreshold', v)}
+          />
+          <TweakSection label="Friend" />
+          <TweakText
+            label="Friend's name" value={t.friendName} placeholder="Friend"
+            onChange={(v) => setTweak('friendName', v)}
           />
           <TweakSection label="Data" />
           <TweakButton label="Reset all entries" onClick={reset} />

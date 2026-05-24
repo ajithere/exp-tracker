@@ -38,7 +38,7 @@
   ];
 
   const DEFAULTS = {
-    settings: { chfRate: 123, warningThreshold: 80 },
+    settings: { chfRate: 123, warningThreshold: 80, friendName: 'Friend' },
     entries: [],
   };
 
@@ -167,6 +167,9 @@
       id, amount, currency: entry.currency, amountINR,
       category: entry.category, person: entry.person,
       note: entry.note || '', ts: Date.now(),
+      sharedWithFriend: entry.sharedWithFriend || false,
+      paidBy:           entry.paidBy           || 'us',
+      splitRatio:       entry.splitRatio        || '50-50',
     };
     _emit({ ..._state, entries: [newEntry, ..._state.entries] });
 
@@ -266,7 +269,11 @@
     const byCategory = {};
     variableBudgets.forEach(c => { byCategory[c.category] = 0; });
     state.entries.forEach(e => {
-      byCategory[e.category] = (byCategory[e.category] || 0) + e.amountINR;
+      const ratio = !e.sharedWithFriend ? 1
+        : e.splitRatio === '75-25' ? 0.75
+        : e.splitRatio === '0-100' ? 0
+        : 0.5;
+      byCategory[e.category] = (byCategory[e.category] || 0) + Math.round(e.amountINR * ratio);
     });
 
     const fixedBudget    = fixedCosts.reduce((s, c) => s + c.budget, 0);
@@ -289,10 +296,34 @@
     };
   }
 
+  function summarizeFriend(state) {
+    const friendName = state.settings.friendName || 'Friend';
+    let balance = 0; // positive = friend owes us, negative = we owe friend
+    const transactions = [];
+    state.entries.filter(e => e.sharedWithFriend).forEach(e => {
+      const familyRatio = e.splitRatio === '75-25' ? 0.75
+                        : e.splitRatio === '0-100'  ? 0
+                        : 0.5;
+      const friendShare = Math.round(e.amountINR * (1 - familyRatio));
+      const familyShare = Math.round(e.amountINR * familyRatio);
+      if (e.splitRatio === '0-100') {
+        balance -= e.amountINR;
+        transactions.push({ ...e, weOwe: e.amountINR });
+      } else if (e.paidBy === 'us') {
+        balance += friendShare;
+        transactions.push({ ...e, friendOwes: friendShare });
+      } else {
+        balance -= familyShare;
+        transactions.push({ ...e, weOwe: familyShare });
+      }
+    });
+    return { balance, transactions, friendName };
+  }
+
   window.ExpenseStore = {
     PEOPLE, FIXED_COSTS, VARIABLE_BUDGETS,
     load, reset,
     addEntry, updateEntry, deleteEntry, setSettings,
-    useStore, useSyncStatus, summarize,
+    useStore, useSyncStatus, summarize, summarizeFriend,
   };
 })();
