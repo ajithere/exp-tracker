@@ -517,6 +517,10 @@ function CompassAdd({ state, onDone, editing, onCancelEdit }) {
 // ─── History ────────────────────────────────────────────────────────────────
 function CompassHistory({ state, onEdit }) {
   const [expanded, setExpanded] = React.useState(null);
+  const [fixedOpen, setFixedOpen] = React.useState(false);
+  const fixedCosts = state.fixedCosts || [];
+  const fixedTotal = fixedCosts.reduce((s, c) => s + c.actual, 0);
+
   const groups = {};
   state.entries.forEach(e => {
     const key = cFmtDate(e.ts);
@@ -525,28 +529,66 @@ function CompassHistory({ state, onEdit }) {
   });
   const keys = Object.keys(groups);
 
-  if (state.entries.length === 0) {
-    return (
-      <div style={{ padding: '80px 30px', textAlign: 'center', color: C_TEXT_2 }}>
-        <div style={{
-          width: 48, height: 48, margin: '0 auto', borderRadius: 999,
-          background: C_BG_2, border: `0.5px solid ${C_LINE_2}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: C_FONT_NUM, fontSize: 22, color: C_TEXT_3,
-        }}>∅</div>
-        <div style={{ fontSize: 14, marginTop: 14, fontWeight: 500 }}>No expenses yet</div>
-        <div style={{ fontSize: 12, marginTop: 4, color: C_TEXT_3 }}>Tap the + below to record the first.</div>
-      </div>
-    );
-  }
-
   function personColor(p) {
     return p === 'Asha' ? '#e89b7e' : p === 'Ajit' ? '#9cc6ff' : p === 'Nishant' ? '#b6e1a3' : '#c8a8e9';
   }
 
   return (
     <div style={{ padding: '4px 20px 30px' }}>
-      {keys.map(k => {
+      {/* Fixed costs collapsible section */}
+      <div style={{ marginBottom: 16 }}>
+        <div onClick={() => setFixedOpen(v => !v)} style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 14px', cursor: 'pointer',
+          background: C_BG_2,
+          borderRadius: fixedOpen ? '12px 12px 0 0' : 12,
+          border: `0.5px solid ${C_LINE}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13 }}>🔒</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: C_TEXT_2 }}>Fixed costs</span>
+            <span style={{ fontSize: 11, color: C_TEXT_3 }}>{fixedCosts.length} items</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontFamily: C_FONT_NUM, fontSize: 13, color: C_TEXT_2 }}>₹{cFmtK(fixedTotal)}</span>
+            <span style={{ fontSize: 10, color: C_TEXT_3 }}>{fixedOpen ? '▲' : '▼'}</span>
+          </div>
+        </div>
+        {fixedOpen && fixedCosts.map((fc, i) => (
+          <div key={i} style={{
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+            padding: '10px 14px',
+            borderTop: `0.5px solid ${C_LINE}`,
+            borderLeft: `0.5px solid ${C_LINE}`,
+            borderRight: `0.5px solid ${C_LINE}`,
+            borderBottom: i === fixedCosts.length - 1 ? `0.5px solid ${C_LINE}` : 'none',
+            background: C_BG_2,
+            borderRadius: i === fixedCosts.length - 1 ? '0 0 12px 12px' : 0,
+          }}>
+            <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: C_TEXT }}>{fc.category}</div>
+              {fc.note && <div style={{ fontSize: 11, color: C_TEXT_3, marginTop: 2 }}>{fc.note}</div>}
+            </div>
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <div style={{ fontFamily: C_FONT_NUM, fontSize: 14, fontWeight: 500, color: C_TEXT }}>₹{cFmt(fc.actual)}</div>
+              <div style={{ fontFamily: C_FONT_NUM, fontSize: 10, color: C_TEXT_3, marginTop: 1 }}>of ₹{cFmt(fc.budget)}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {state.entries.length === 0 ? (
+        <div style={{ padding: '40px 30px', textAlign: 'center', color: C_TEXT_2 }}>
+          <div style={{
+            width: 48, height: 48, margin: '0 auto', borderRadius: 999,
+            background: C_BG_2, border: `0.5px solid ${C_LINE_2}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: C_FONT_NUM, fontSize: 22, color: C_TEXT_3,
+          }}>∅</div>
+          <div style={{ fontSize: 14, marginTop: 14, fontWeight: 500 }}>No expenses yet</div>
+          <div style={{ fontSize: 12, marginTop: 4, color: C_TEXT_3 }}>Tap the + below to record the first.</div>
+        </div>
+      ) : keys.map(k => {
         const dayTotal = groups[k].reduce((a, b) => a + b.amountINR, 0);
         return (
           <div key={k} style={{ marginBottom: 16 }}>
