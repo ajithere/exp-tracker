@@ -79,7 +79,7 @@ function CompassRing({ pct, status, size = 200, stroke = 12 }) {
 }
 
 // ─── Friend balance card ─────────────────────────────────────────────────────
-function FriendBalanceCard({ balance, friendName }) {
+function FriendBalanceCard({ balance, friendName, chfRate }) {
   const isPositive = balance > 0;
   const isZero = balance === 0;
   const color = isZero ? C_TEXT_3 : isPositive ? C_OK : C_WARN;
@@ -88,6 +88,8 @@ function FriendBalanceCard({ balance, friendName }) {
     : isPositive
       ? `${friendName} owes us`
       : `We owe ${friendName}`;
+  const absINR = Math.abs(balance);
+  const absCHF = chfRate ? (absINR / chfRate).toFixed(2) : null;
   return (
     <div style={{
       marginTop: 12, padding: '12px 14px',
@@ -100,8 +102,15 @@ function FriendBalanceCard({ balance, friendName }) {
         <div style={{ fontSize: 13, fontWeight: 500, color, marginTop: 3 }}>{label}</div>
       </div>
       {!isZero && (
-        <div style={{ fontFamily: C_FONT_NUM, fontSize: 20, fontWeight: 500, color }}>
-          ₹{cFmt(Math.abs(balance))}
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontFamily: C_FONT_NUM, fontSize: 20, fontWeight: 500, color }}>
+            {absCHF ? `CHF ${absCHF}` : `₹${cFmt(absINR)}`}
+          </div>
+          {absCHF && (
+            <div style={{ fontFamily: C_FONT_NUM, fontSize: 11, color: C_TEXT_3, marginTop: 2 }}>
+              ₹{cFmt(absINR)}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -189,7 +198,7 @@ function CompassDashboard({ state, summary, onJump }) {
 
       {/* Friend balance */}
       {friend.transactions.length > 0 && (
-        <FriendBalanceCard balance={friend.balance} friendName={friend.friendName} />
+        <FriendBalanceCard balance={friend.balance} friendName={friend.friendName} chfRate={state.settings.chfRate} />
       )}
 
       {/* Category cards */}

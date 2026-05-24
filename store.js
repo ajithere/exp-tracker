@@ -271,7 +271,7 @@
     state.entries.forEach(e => {
       const ratio = !e.sharedWithFriend ? 1
         : e.splitRatio === '75-25' ? 0.75
-        : e.splitRatio === '0-100' ? 0
+        : e.splitRatio === '0-100' ? 1
         : 0.5;
       byCategory[e.category] = (byCategory[e.category] || 0) + Math.round(e.amountINR * ratio);
     });
