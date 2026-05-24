@@ -6,7 +6,7 @@ This document explains the Switzerland Trip Tracker from top to bottom. No prior
 
 ## The Big Picture
 
-Three people (Asha, Ajit, Nishant) share one expense tracker during a trip. The app lives on everyone's phone as an icon (like a native app). When you add an expense, it immediately appears on your screen *and* gets saved to a shared Google Sheet in the background. The other two people see your entry within 30 seconds because their apps quietly check for updates every half-minute.
+Three family members (Asha, Ajit, Nishant) share one expense tracker during a trip. A friend (Hitesh) sometimes joins and shares some expenses. The app lives on everyone's phone as an icon (like a native app). When you add an expense, it immediately appears on your screen *and* gets saved to a shared Google Sheet in the background. The other two people see your entry within 30 seconds because their apps quietly check for updates every half-minute.
 
 ```
 Your Phone                      Google's Servers
@@ -92,7 +92,7 @@ Browser Request  →  Service Worker  →  Network (or cache)
 ```js
 caches.open(CACHE).then(cache => cache.addAll(ASSETS))
 ```
-The SW downloads and saves all the app's files (HTML, JS, fonts, React library) into a local cache called `swiss-tracker-v2`. This is how the app works offline.
+The SW downloads and saves all the app's files (HTML, JS, fonts, React library) into a local cache called `swiss-tracker-v3`. This is how the app works offline.
 
 **On every request** (each time the app needs a file):
 ```js
@@ -100,8 +100,8 @@ caches.match(e.request).then(cached => cached || fetch(e.request))
 ```
 For files that belong to this app (same-origin), it serves from cache first. Only goes to the network if the file isn't cached. This makes the app load instantly — no network needed.
 
-**When the cache version changes** (`swiss-tracker-v1` → `swiss-tracker-v2`):
-The old SW is replaced, old cache is deleted, and all files are freshly downloaded. This is how updates are pushed — bump the version number in `sw.js`.
+**When the cache version changes** (e.g. `swiss-tracker-v2` → `swiss-tracker-v3`):
+The old SW is replaced, old cache is deleted, and all files are freshly downloaded. This is how updates are pushed — bump the version string in `sw.js`.
 
 **Key lesson:** The service worker is registered in `index.html` with:
 ```js
@@ -141,16 +141,28 @@ Order matters. `store.js` runs first because the UI files need it. Files with `t
 **D. Wires everything together**
 ```jsx
 function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);  // CHF rate, threshold, friend name
+
+  // Push settings changes to the store (and Google Sheets)
+  React.useEffect(() => {
+    window.ExpenseStore.setSettings({
+      chfRate: t.chfRate,
+      warningThreshold: t.warningThreshold,
+      friendName: t.friendName,
+    });
+  }, [t.chfRate, t.warningThreshold, t.friendName]);
+
   return (
     <React.Fragment>
-      <CompassApp />      {/* the main UI */}
-      <TweaksPanel />     {/* the settings panel */}
+      <CompassApp />
+      <TweaksPanel title="Settings">
+        {/* CHF rate slider, warning threshold slider, friend name input */}
+      </TweaksPanel>
     </React.Fragment>
   );
 }
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 ```
-This tells React: "take the `<App>` component and render it inside the `#root` div". From this point on, React controls the page.
 
 **The `_firstRender` ref trick:**
 ```js
@@ -160,7 +172,7 @@ React.useEffect(() => {
   window.ExpenseStore.setSettings({ chfRate: t.chfRate, ... });
 }, [t.chfRate]);
 ```
-React's `useEffect` runs after every render, including the very first one. Without this guard, loading the page would immediately overwrite the saved CHF rate in Google Sheets with the default value. The ref skips the effect on the first render only.
+React's `useEffect` runs after every render, including the very first one. Without this guard, loading the page would immediately overwrite the saved settings in Google Sheets with the default values. The ref skips the effect on the first render only.
 
 ---
 
@@ -181,12 +193,26 @@ The outer `(function(){})()` creates a private scope. Variables inside cannot be
 **State structure:**
 ```js
 {
-  settings: { chfRate: 123, warningThreshold: 80 },
-  entries: [ { id, ts, category, person, amount, currency, amountINR, note }, ... ],
-  fixedCosts: [ { category, budget, actual, note }, ... ],
-  variableBudgets: [ { category, budget, note }, ... ]
+  settings: {
+    chfRate: 123,           // INR per CHF
+    warningThreshold: 80,   // % at which the ring turns amber
+    friendName: 'Hitesh',   // configurable name for the friend
+  },
+  entries: [
+    {
+      id, ts, category, person, amount, currency, amountINR, note,
+      sharedWithFriend: true,   // was this split with the friend?
+      paidBy: 'us',             // 'us' | 'friend'
+      splitRatio: '50-50',      // '50-50' | '75-25' | '0-100' (family:friend)
+    },
+    ...
+  ],
+  fixedCosts: [ { category, budget, actual, note }, ... ],      // from Sheet1
+  variableBudgets: [ { category, budget, note }, ... ],         // from Sheet1
 }
 ```
+
+`amountINR` is always the **full** expense amount in INR. The family's share for budget calculations is derived at render time by multiplying by the appropriate ratio — this keeps the raw data clean and backward-compatible.
 
 **localStorage cache:**
 ```js
@@ -245,6 +271,31 @@ async function _syncFromSheets() {
 ```
 This function is called on page load, every 30 seconds, when you switch back to the browser tab, and after every mutation to confirm the server accepted it.
 
+**Budget summary — `summarize(state)`:**
+```js
+state.entries.forEach(e => {
+  const ratio = !e.sharedWithFriend ? 1       // not shared → 100% family
+    : e.splitRatio === '75-25' ? 0.75         // family pays 75%
+    : e.splitRatio === '0-100' ? 1            // friend paid upfront, family owes all back
+    : 0.5;                                    // default 50/50
+  byCategory[e.category] += Math.round(e.amountINR * ratio);
+});
+```
+For split expenses, only the family's portion counts toward the budget ring. The `0-100` (Full owe) case is special — the friend paid upfront but the family must reimburse 100%, so the full amount hits the budget.
+
+**Friend balance — `summarizeFriend(state)`:**
+```js
+// positive balance = friend owes us; negative = we owe friend
+if (e.splitRatio === '0-100') {
+  balance -= e.amountINR;       // friend paid everything, we owe it all back
+} else if (e.paidBy === 'us') {
+  balance += friendShare;       // we paid, friend owes us their share
+} else {
+  balance -= familyShare;       // friend paid, we owe our share
+}
+```
+Returns `{ balance, transactions, friendName }`. The balance is in INR; the UI converts to CHF for display.
+
 **The secret in API calls:**
 ```js
 const SECRET = window.TRACKER_SECRET || '';
@@ -292,10 +343,16 @@ Both check the secret first. If it does not match, they return `Unauthorized` an
 **Reading from three sheet tabs:**
 ```
 Sheet1      → budget structure (Fixed/Variable categories, amounts)
-Expenses    → every expense entry
-Settings    → CHF rate, warning threshold
+Expenses    → every expense entry (11 columns including split/friend fields)
+Settings    → CHF rate, warning threshold, friend name
 ```
 `getState_()` reads all three and returns one combined JSON object to the frontend.
+
+**The Expenses tab has 11 columns:**
+```
+ID | Timestamp | Category | Person | Amount | Currency | Amount INR | Note | Shared | Paid By | Split
+```
+Old rows written before the friend-split feature was added have empty values in columns 9–11; these default safely to `false`, `'us'`, and `'50-50'` when read back.
 
 **Input sanitization:**
 ```js
@@ -314,11 +371,22 @@ This file contains all the visible UI, written in JSX and compiled by Babel in t
 
 **Component tree:**
 ```
-<CompassApp>                    ← root component, owns all state
-  ├── topbar (sync dot, title)
-  ├── <CompassDashboard>        ← "Home" tab: ring gauge + category bars
+<CompassApp>                    ← root component, owns tab state
+  ├── top bar (sync dot, title, budget %)
+  ├── <CompassDashboard>        ← "Home" tab
+  │     ├── CompassRing         ← SVG ring gauge (total spend %)
+  │     ├── category bars       ← per-category variable spend
+  │     ├── fixed/variable split cards
+  │     └── FriendBalanceCard   ← net balance with friend (CHF + INR)
   ├── <CompassAdd>              ← "+" tab: add or edit an expense
-  ├── <CompassHistory>          ← "History" tab: list of all entries
+  │     ├── amount + currency
+  │     ├── category picker
+  │     ├── person buttons (Asha / Ajit / Nishant / Hitesh)
+  │     ├── note field
+  │     └── split section       ← shown when friend is involved
+  ├── <CompassHistory>          ← "History" tab
+  │     ├── fixed costs section ← collapsible, shows Sheet1 fixed items
+  │     └── expense entries     ← grouped by date, expand to edit/delete
   └── tab bar (Home / + / History)
 ```
 
@@ -327,11 +395,42 @@ This file contains all the visible UI, written in JSX and compiled by Babel in t
 function CompassApp() {
   const state   = window.ExpenseStore.useStore();        // live data from store
   const summary = window.ExpenseStore.summarize(state);  // computed totals
-  const [tab, setTab]       = React.useState('home');    // which tab is visible
+  const [tab, setTab]         = React.useState('home');  // which tab is visible
   const [editing, setEditing] = React.useState(null);   // entry being edited
 }
 ```
 `useStore()` returns live state and re-renders the component whenever the store emits a change. `summarize()` calculates totals and budget percentages from the raw entries.
+
+**Friend split in CompassAdd:**
+
+When adding or editing an expense, the payer is selected from four buttons: Asha, Ajit, Nishant, and Hitesh (the friend's name comes from `state.settings.friendName`). Selecting Hitesh automatically enables the split section. The split section shows:
+
+- If Hitesh is paying: "Hitesh paid · how much do we owe?" with options 50/50, 75/25, or Full owe (0-100). Full owe means Hitesh paid everything and the family owes him 100% back.
+- If a family member is paying: a toggle "Split with Hitesh" that reveals 50/50 or 75/25 options.
+
+In both cases, a CHF and INR breakdown is shown live as the amount is typed.
+
+`paidBy` is derived automatically from who is selected — no separate "who paid" toggle needed.
+
+**FriendBalanceCard:**
+```jsx
+// balance > 0: friend owes us  →  green
+// balance < 0: we owe friend   →  amber
+// balance = 0: settled         →  grey
+```
+Shows the net balance as `CHF X.XX` with `₹Y` in smaller grey text below. CHF is derived by dividing the INR balance by the current CHF rate from settings.
+
+**Fixed costs in CompassHistory:**
+
+A collapsible section at the top of the History list (collapsed by default) shows all fixed-cost items from Sheet1 — flights, visa, Airbnb, travel card, etc. Each row shows the category, note, actual amount, and budget. Variable expense entries follow below, completely unchanged. The section header always shows the total fixed actual and item count so you can see the headline without expanding.
+
+**The ring gauge:**
+```js
+const circumference = 2 * Math.PI * r;
+const dash = Math.min(pct, 1) * circumference;
+// <circle strokeDasharray={`${dash} ${circumference}`} />
+```
+Two SVG circles are drawn. The second uses `strokeDasharray` to draw only the fraction of the circle that corresponds to spending percentage. At 50% spending, exactly half the ring is filled.
 
 **The sync status dot:**
 ```js
@@ -343,26 +442,39 @@ function SyncDot() {
 ```
 A small coloured circle in the top bar. Green = synced. Yellow = syncing. Red = error. Grey = local-only mode.
 
-**The ring gauge:**
-```js
-const circumference = 2 * Math.PI * r;
-const dash = Math.min(pct, 1) * circumference;
-// <circle strokeDasharray={`${dash} ${circumference}`} />
-```
-Two SVG circles are drawn. The second uses `strokeDasharray` to draw only the fraction of the circle that corresponds to spending percentage. At 50% spending, exactly half the ring is filled.
-
 **Edit and delete flow:**
 Tapping an entry in History expands it to show Edit and Delete buttons. Edit calls:
 ```js
 function startEdit(entry) { setEditing(entry); setTab('add'); }
 ```
-This stores the entry and switches to the Add tab. `CompassAdd` detects that `editing` is set and pre-fills all form fields with the existing values.
+This stores the entry and switches to the Add tab. `CompassAdd` detects that `editing` is set and pre-fills all form fields with the existing values, including the split/friend fields.
 
 ---
 
 ### 7. `tweaks-panel.jsx` — The Settings Drawer
 
-A reusable floating panel that slides in when you tap the ⚙ gear button. It contains the CHF → ₹ rate slider, the warning threshold slider, and a reset button. It exposes a `useTweaks` hook (used in `index.html`) and registers `window.__toggleSettings` which the gear button calls to open/close it.
+A reusable floating panel that slides in when you tap the ⚙ gear button. It exposes a `useTweaks` hook (used in `index.html`) and registers `window.__toggleSettings` which the gear button calls to open/close it.
+
+**Controls:**
+- **CHF → ₹ rate** slider (80–150, step 0.5) — changing this instantly re-converts all existing CHF entries in the UI and syncs the new rate to Google Sheets
+- **Warn at** slider (50–95%, step 5%) — the threshold at which the budget ring turns amber
+- **Friend's name** text input — saved on blur (not on every keystroke, to avoid a race condition where intermediate values like "Hites" get synced to the sheet before "Hitesh" is fully typed)
+
+**`TweakText` component:**
+```jsx
+function TweakText({ label, value, onChange, placeholder }) {
+  const [local, setLocal] = React.useState(value);
+  React.useEffect(() => { setLocal(value); }, [value]);  // sync from sheet
+  return (
+    <input
+      value={local}
+      onChange={e => setLocal(e.target.value)}   // update local display only
+      onBlur={e => onChange(e.target.value)}     // save on focus-out
+    />
+  );
+}
+```
+Local state tracks what the user types for immediate visual feedback. `onChange` (which triggers `setSettings` and an API call) only fires when the user leaves the field.
 
 ---
 
@@ -399,7 +511,10 @@ Here is exactly what happens from the moment you tap "Add expense" to the moment
 
 ```
 1. You fill in the form and tap "Add expense"
-   └─ CompassAdd calls window.ExpenseStore.addEntry({ amount: 50, currency: 'CHF', ... })
+   └─ CompassAdd calls window.ExpenseStore.addEntry({
+        amount: 50, currency: 'CHF',
+        sharedWithFriend: true, paidBy: 'us', splitRatio: '50-50', ...
+      })
 
 2. store.js creates a local entry immediately
    └─ Assigns a unique ID: 'e' + Date.now() + random string
@@ -408,7 +523,8 @@ Here is exactly what happens from the moment you tap "Add expense" to the moment
 
 3. React sees the event and re-renders
    └─ Your new entry appears in the History tab instantly
-   └─ The ring gauge updates to show the new total
+   └─ The ring gauge updates (family pays 50% → ₹3,075 hits the category)
+   └─ The FriendBalanceCard updates (friend owes us ₹3,075 more)
 
 4. In the background, store.js calls _apiPost({ action: 'addEntry', entry, secret })
    └─ HTTP POST to the Google Apps Script URL
@@ -417,7 +533,7 @@ Here is exactly what happens from the moment you tap "Add expense" to the moment
 5. Code.gs receives the POST
    └─ Checks the secret matches Script Properties → passes
    └─ Sanitizes the note and category fields
-   └─ Appends a new row to the Expenses tab in Google Sheet
+   └─ Appends a new row to the Expenses tab (all 11 columns)
    └─ Returns { ok: true, id }
 
 6. store.js receives the success response
@@ -452,7 +568,9 @@ Here is exactly what happens from the moment you tap "Add expense" to the moment
 
 **Add a new expense category** → Add a row to Sheet1 with type `Variable`. App picks it up on next sync.
 
-**Change the CHF rate** → Use the ⚙ settings panel in the app. It saves to the Settings tab in Sheets.
+**Change the CHF rate** → Use the ⚙ settings panel in the app. It saves to the Settings tab in Sheets and instantly re-converts all CHF entries in the UI.
+
+**Change the friend's name** → Use the ⚙ settings panel → "Friend's name" field. Type the name and tap/click away to save. It syncs to all devices within 30 seconds.
 
 **Change the app code** → Edit files locally, `git push`. GitHub Actions redeploys automatically in ~60 seconds.
 
@@ -461,3 +579,5 @@ Here is exactly what happens from the moment you tap "Add expense" to the moment
 git commit --allow-empty -m "rotate secret"
 git push
 ```
+
+**Bump the service worker cache** → When deploying changes to any cached file, increment the cache version string in `sw.js` (e.g. `swiss-tracker-v3` → `swiss-tracker-v4`). This forces all installed apps to download fresh files on next load.

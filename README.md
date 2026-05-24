@@ -1,6 +1,6 @@
 # Switzerland Trip Tracker
 
-A shared expense tracker PWA for three people travelling together. Expenses entered on any device sync to a shared Google Sheet in real time.
+A shared expense tracker PWA for Asha, Ajit, and Nishant travelling together, with optional expense splitting with a friend (Hitesh). Expenses entered on any device sync to a shared Google Sheet in real time.
 
 ## Features
 
@@ -8,6 +8,9 @@ A shared expense tracker PWA for three people travelling together. Expenses ente
 - Automatic CHF → INR conversion at a configurable rate
 - Budget ring gauge showing overall spend vs. budget
 - Per-category spend bars with warning thresholds
+- **Split expenses with a friend** — 50/50 or 75/25 (family:friend), or "Full owe" when the friend pays upfront
+- **Friend balance card** — running net of what the friend owes us (or we owe them), shown in CHF with INR in brackets
+- **Fixed costs in History** — collapsible section showing Sheet1 fixed-cost items alongside variable entries
 - Shared Google Sheets backend — all three users stay in sync
 - Works offline; syncs when back online
 - Installable as a home screen app (PWA) on iOS and Android
@@ -35,8 +38,8 @@ The Google Sheet needs three tabs:
 | Tab | Purpose |
 |-----|---------|
 | `Sheet1` | Budget categories — columns: Category, Category Type (Fixed/Variable), Budgeted Amount, Comments, Actual Amount |
-| `Expenses` | Auto-created by the app on first write |
-| `Settings` | Auto-created by the app on first write |
+| `Expenses` | Auto-created by the app on first write — 11 columns including split/friend fields |
+| `Settings` | Auto-created by the app on first write — stores CHF rate, warning threshold, friend name |
 
 ### Local Development
 
@@ -80,10 +83,10 @@ Open the GitHub Pages URL in Safari (iOS) or Chrome (Android) → tap the share/
 ## Project Structure
 
 ```
-├── index.html              # Entry point — loads scripts, wires React root
+├── index.html              # Entry point — loads scripts, wires React root, settings panel
 ├── store.js                # State management, Google Sheets sync, localStorage cache
-├── compass-app.jsx         # Main UI — dashboard, add expense, history
-├── tweaks-panel.jsx        # Settings drawer (CHF rate, warning threshold)
+├── compass-app.jsx         # Main UI — dashboard, add expense, history, friend balance
+├── tweaks-panel.jsx        # Settings drawer (CHF rate, warning threshold, friend name)
 ├── Code.gs                 # Google Apps Script backend (lives in Apps Script, not deployed via git)
 ├── sw.js                   # Service worker for offline caching
 ├── manifest.json           # PWA manifest
