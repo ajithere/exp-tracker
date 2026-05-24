@@ -1,4 +1,4 @@
-const CACHE = 'swiss-tracker-v2';
+const CACHE = 'swiss-tracker-v3';
 const ASSETS = [
   '/',
   '/index.html',
